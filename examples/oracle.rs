@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use time::Duration;
 use tokio::{signal, task::AbortHandle};
 use tower_sessions::{Expiry, Session, SessionManagerLayer, session_store::ExpiredDeletion};
-use tower_sessions_stores_oracle::OracleStore;
+use tower_sessions_stores_oracle_bb8::OracleStore;
 
 const COUNTER_KEY: &str = "counter";
 
