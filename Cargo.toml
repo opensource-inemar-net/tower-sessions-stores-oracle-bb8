@@ -5,7 +5,7 @@ authors = ["Inemar <opensource@inemar.net>"]
 license = "MIT"
 keywords = ["axum", "sessions", "cookie", "tower", "oracle"]
 categories = ["asynchronous", "network-programming", "web-programming"]
-repository = "https://github.com/maxcountryman/tower-sessions-stores"
+repository = "https://github.com/opensource-inemar-net/tower-sessions-stores-oracle-bb8.git"
 readme = "README.md"
 
 version = "0.2.0"
