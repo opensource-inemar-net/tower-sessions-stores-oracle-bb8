@@ -8,7 +8,7 @@ categories = ["asynchronous", "network-programming", "web-programming"]
 repository = "https://github.com/opensource-inemar-net/tower-sessions-stores-oracle-bb8.git"
 readme = "README.md"
 
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
