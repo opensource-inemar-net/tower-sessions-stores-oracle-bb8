@@ -9,6 +9,7 @@ use tower_sessions::{Expiry, Session, SessionManagerLayer, session_store::Expire
 use tower_sessions_stores_oracle_bb8::OracleStore;
 
 const COUNTER_KEY: &str = "counter";
+const DUMMY_KEY: &str = "dummy";
 
 #[derive(Serialize, Deserialize, Default)]
 struct Counter(usize);
@@ -16,11 +17,21 @@ struct Counter(usize);
 async fn handler(session: Session) -> impl IntoResponse {
     let counter: Counter = session.get(COUNTER_KEY).await.unwrap().unwrap_or_default();
     session.insert(COUNTER_KEY, counter.0 + 1).await.unwrap();
+    session
+        .insert(
+            DUMMY_KEY,
+            std::iter::repeat("X").take(5000).collect::<String>(),
+        )
+        .await
+        .unwrap();
     format!("Current count: {}", counter.0)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
     let database_url = std::option_env!("ORACLE_URL").expect("Missing ORACLE_URL.");
     let database_user = std::option_env!("ORACLE_USER").expect("Missing ORACLE_USER.");
     let database_password = std::option_env!("ORACLE_PASSWORD").expect("Missing ORACLE_PASSWORD.");

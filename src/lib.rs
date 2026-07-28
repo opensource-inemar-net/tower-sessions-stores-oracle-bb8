@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use base64::Engine;
 use bb8::Pool;
 use bb8::PooledConnection;
 use bb8_oracle::OracleConnectionManager;
@@ -10,6 +11,7 @@ use tower_sessions_core::session::Record;
 use tower_sessions_core::session_store;
 use tracing::debug;
 use tracing::error;
+use tracing::warn;
 
 /// A Oracle SQL session store.
 #[derive(Clone, Debug)]
@@ -77,7 +79,7 @@ impl OracleStore {
             r#"
             create table if not exists {}  (
                myid varchar2(4000) primary key not null,
-               data BLOB  not null,
+               data CLOB  not null,
                expiry_data NUMBER not null
             )"#,
             self.table_name
@@ -142,10 +144,18 @@ impl OracleStore {
 
         let id = record.id.to_string();
         let data = rmp_serde::to_vec(&record)?;
+        let datastr = base64::prelude::BASE64_STANDARD.encode(&data);
         let expiry_date = record.expiry_date.to_utc().unix_timestamp();
         let tx = conn.clone();
         let res: Result<(), OracleSessionStoreError> = tokio::task::spawn_blocking(move || {
-            tx.execute(merge.as_str(), &[&id, &data, &expiry_date])?;
+            debug!(
+                "Executing merge: {} with {:?} - {:?} - {:?}",
+                merge,
+                id,
+                expiry_date,
+                datastr.len()
+            );
+            tx.execute(merge.as_str(), &[&id, &datastr, &expiry_date])?;
             tx.commit()?;
             Ok(())
         })
@@ -240,6 +250,7 @@ impl ExpiredDeletion for OracleStore {
 #[async_trait]
 impl SessionStore for OracleStore {
     async fn create(&self, record: &mut Record) -> session_store::Result<()> {
+        debug!("Creating record with id: {:?}", record.id);
         let mut tx = self
             .pool
             .get()
@@ -256,8 +267,9 @@ impl SessionStore for OracleStore {
             }
             record.id = Id::default();
         }
-
+        debug!("create Saving record with id: {:?}", record.id);
         self.save_with_conn(&mut tx, record).await?;
+        debug!("create completed");
 
         //tx.commit().await.map_err(SqlxStoreError::Sqlx)?;
 
@@ -265,16 +277,19 @@ impl SessionStore for OracleStore {
     }
 
     async fn save(&self, record: &Record) -> session_store::Result<()> {
+        debug!("Save record with id: {:?}", record.id);
         let mut conn = self
             .pool
             .get()
             .await
             .map_err(OracleSessionStoreError::RunError)?;
         self.save_with_conn(&mut conn, record).await?;
+        debug!("Save record completed");
         Ok(())
     }
 
     async fn load(&self, session_id: &Id) -> session_store::Result<Option<Record>> {
+        debug!("Load record with id: {:?}", session_id);
         let query = format!(
             r#"
             select data from {}
@@ -291,14 +306,33 @@ impl SessionStore for OracleStore {
         let id = session_id.to_string();
         let now = OffsetDateTime::now_utc().to_utc().unix_timestamp();
         let record_value = tokio::task::spawn_blocking(move || {
+            debug!("Query: {} with {:?} - {:?}", query, id, now);
             let mut res = tx.query(query.as_str(), &[&id, &now])?;
+            debug!("Got Res");
             match res.next() {
                 Some(Ok(row)) => {
-                    let data: Vec<u8> = row.get(0)?;
-                    Ok(Some(data))
+                    debug!("Got Res1 {:?}",row.column_info());
+                    let data: String = row.get(0)?;
+                    debug!("Got data {:?}", data.len());
+                    let data = base64::engine::general_purpose::STANDARD.decode(&data);
+                    match data {
+                        Ok(data) => {
+                            Ok(Some(data))
+                        },
+                        Err(e) => {
+                            warn!("Base64 decode error {:?}", e);
+                            Err(OracleSessionStoreError::Logic(format!("Base64 decode error {:?}", e)))
+                        },
+                    }
                 }
-                Some(Err(e)) => Err(OracleSessionStoreError::Oracle(e)),
-                None => Ok(None),
+                Some(Err(e)) => {
+                    warn!("Oracle Error {:?}", e);
+                    Err(OracleSessionStoreError::Oracle(e))
+                }
+                None => {
+                    debug!("No session found");
+                    Ok(None)
+                }
             }
         })
         .await
