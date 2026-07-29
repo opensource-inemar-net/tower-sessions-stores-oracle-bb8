@@ -20,9 +20,13 @@ This is the way to create a tower session store.
     let session_store = OracleStore::new(pool).with_table_name("sessions")?;
     session_store.migrate().await?;
 
+
+
+
 session_store migrate will create the necessary table if it is missing.
 
-To delete expired sessions a regual task is necesary
+To delete expired sessions a regual task is necesary:
+
      let deletion_task = tokio::task::spawn(
         session_store
             .clone()
